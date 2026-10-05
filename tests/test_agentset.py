@@ -933,6 +933,43 @@ def test_hardkeyagentset_str():
     assert success
 
 
+def test_agentset_do_skips_agent_removed_mid_iteration():
+    """Weak AgentSet.shuffle_do must not call `run` on an agent a prior agent removed.
+
+    This mirrors test_hardkeyagentset_str above, but for the weak-ref AgentSet
+    returned by .select(), .copy(), non-inplace .shuffle(), etc.
+    """
+    from mesa.agent import AgentSet
+
+    class ShrinkingAgent(Agent):
+        def __init__(self, model, name):
+            super().__init__(model)
+            self.name = name
+            self.ran = False
+
+        def run(self):
+            if self.name == "Killer":
+                victim = next(a for a in self.model.aset if a.name == "Victim")
+                self.model.aset.discard(victim)
+                victim.remove()
+            self.ran = True
+
+    success = False
+    for seed in range(20):
+        model = Model(rng=seed)
+        killer = ShrinkingAgent(model, "Killer")
+        victim = ShrinkingAgent(model, "Victim")
+        model.aset = AgentSet([killer, victim], random=model.random)
+        model.aset.shuffle_do("run")
+
+        if killer.ran and not victim.ran:
+            assert victim not in model.aset
+            success = True
+            break
+
+    assert success, "Never exercised killer-first ordering in 20 seeds"
+
+
 def test_hardkeyagentset_map_do_shuffledo():
     """Test map and shuffle_do overrides on _HardKeyAgentSet."""
     model = Model()
